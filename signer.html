@@ -5,27 +5,54 @@
   <title>MetaMask Message Signer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, sans-serif; margin: 24px; }
-    input, textarea, button { font-size: 16px; width: 100%; padding: 8px; margin: 6px 0; }
-    code { background: #f4f4f4; padding: 2px 4px; }
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; max-width: 900px; }
+    input, textarea, button { font-size: 16px; width: 100%; padding: 10px; margin: 8px 0; }
+    textarea { resize: vertical; }
+    code { background: #f4f4f4; padding: 2px 4px; border-radius: 4px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .muted { opacity: 0.75; font-size: 14px; }
+    .ok { color: #0a7a0a; }
+    .err { color: #b00020; white-space: pre-wrap; }
+    .copy { width: auto; font-size: 14px; padding: 6px 10px; }
+    .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:#eee; font-size:12px; margin-left:8px;}
   </style>
 </head>
 <body>
   <h1>MetaMask Message Signer</h1>
-  <p>1) Click <b>Connect</b>. 2) Paste the <b>Canonical message</b> from the app. 3) Click <b>Sign</b>. 4) Copy the <b>Address</b> and <b>Signature</b> back into the Streamlit app.</p>
+  <p>Flow: <b>Connect</b> → paste the <b>Canonical message</b> from the app → <b>Sign</b> → copy <b>Address</b> and <b>Signature</b> back.</p>
 
-  <button id="connect">Connect Wallet</button>
-  <div id="accountBox"></div>
+  <div class="row">
+    <button id="connect">1) Connect Wallet</button>
+    <button id="sign">2) Sign Message</button>
+  </div>
+  <div id="status" class="muted">Not connected.</div>
 
-  <label>Message to sign</label>
+  <label>Message to sign (paste the exact Canonical message)</label>
   <textarea id="msg" rows="5" placeholder="POT:SpringBreakFund|ACTOR:Alice|ACTION:DEPOSIT|AMOUNT:25.00|TS:...|PREV:..."></textarea>
 
-  <button id="sign">Sign Message</button>
+  <div class="row">
+    <div>
+      <label>Address</label>
+      <input id="addr" readonly />
+    </div>
+    <div>
+      <label>Signature</label>
+      <textarea id="sig" rows="3" readonly></textarea>
+    </div>
+  </div>
 
-  <label>Address</label>
-  <input id="addr" readonly />
-  <label>Signature</label>
-  <textarea id="sig" rows="3" readonly></textarea>
+  <div class="row">
+    <button class="copy" id="copyAddr">Copy Address</button>
+    <button class="copy" id="copySig">Copy Signature</button>
+  </div>
+
+  <details>
+    <summary>Diagnostics <span id="popup" class="pill" style="display:none;">POPUP OPEN?</span></summary>
+    <div id="diag" class="muted"></div>
+  </details>
+
+  <div id="error" class="err"></div>
 
   <script>
     const connectBtn = document.getElementById('connect');
@@ -33,41 +60,119 @@
     const msgEl = document.getElementById('msg');
     const addrEl = document.getElementById('addr');
     const sigEl = document.getElementById('sig');
-    const accountBox = document.getElementById('accountBox');
+    const status = document.getElementById('status');
+    const diag = document.getElementById('diag');
+    const errBox = document.getElementById('error');
+    const copyAddr = document.getElementById('copyAddr');
+    const copySig = document.getElementById('copySig');
+    const popupBadge = document.getElementById('popup');
+
     let account = null;
 
+    function ok(m){ status.innerHTML = '<span class="ok">' + m + '</span>'; console.log(m); }
+    function info(m){ status.textContent = m; console.log(m); }
+    function err(m){ errBox.textContent = m; console.error(m); }
+    function clrErr(){ errBox.textContent = ''; }
     function toHexUtf8(str) {
       const enc = new TextEncoder().encode(str);
       return '0x' + Array.from(enc).map(b => b.toString(16).padStart(2,'0')).join('');
     }
 
-    async function connect() {
-      if (!window.ethereum) {
-        alert("MetaMask not detected. Install the extension and refresh.");
-        return;
+    async function requestPerms() {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_requestPermissions',
+          params: [{ eth_accounts: {} }],
+        });
+      } catch (e) {
+        // ignore if already granted
+        console.warn('wallet_requestPermissions:', e?.message || e);
       }
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      account = accounts[0];
-      accountBox.innerHTML = "Connected account: <code>" + account + "</code>";
-      addrEl.value = account;
+    }
+
+    async function connect() {
+      try {
+        clrErr();
+        if (!window.ethereum) {
+          err("MetaMask not detected. Install it and refresh.");
+          return;
+        }
+
+        await requestPerms();
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        if (!accounts || !accounts.length) {
+          err("No account returned. Unlock MetaMask and try again.");
+          return;
+        }
+        account = accounts[0];
+        addrEl.value = account;
+        ok("Connected: " + account);
+
+        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+        diag.textContent = "ChainId: " + chainId;
+
+        // Listen for account changes
+        window.ethereum.on('accountsChanged', (accs) => {
+          account = accs && accs[0] ? accs[0] : null;
+          addrEl.value = account || '';
+          info(account ? ("Account changed: " + account) : "No account selected.");
+        });
+      } catch (e) {
+        err("Connect error: " + (e && e.message ? e.message : String(e)));
+      }
     }
 
     async function sign() {
-      if (!account) return alert("Connect wallet first.");
-      const msg = msgEl.value.trim();
-      if (!msg) return alert("Paste the Canonical message first.");
+      try {
+        clrErr();
+        if (!window.ethereum) return err("MetaMask not detected.");
+        if (!account) return err("Connect wallet first.");
+        const msg = (msgEl.value || "").trim();
+        if (!msg) return err("Paste the Canonical message first.");
 
-      // Use hex-encoded UTF-8 to avoid any encoding ambiguity
-      const hexMsg = toHexUtf8(msg);
-      const signature = await window.ethereum.request({
-        method: 'personal_sign',
-        params: [ hexMsg, account ],
-      });
-      sigEl.value = signature;
+        // Show a hint that a popup might be open
+        popupBadge.style.display = 'inline-block';
+        setTimeout(() => popupBadge.style.display = 'none', 5000);
+
+        const hexMsg = toHexUtf8(msg);
+        const signature = await window.ethereum.request({
+          method: 'personal_sign',
+          params: [ hexMsg, account ],
+        });
+
+        sigEl.value = signature;
+
+        // Diagnostics
+        const is0x = signature.startsWith('0x');
+        const lenOK = signature.length === 132;
+        diag.innerHTML = [
+          "Message length (chars): " + msg.length,
+          "Hex length (chars): " + hexMsg.length,
+          "Signature length: " + signature.length + (lenOK ? " (looks good)" : " (expected 132)"),
+          "Signature starts with 0x: " + is0x,
+        ].join("\n");
+        ok("Signed successfully.");
+      } catch (e) {
+        // Common cases: user rejected, popup not acknowledged, permissions
+        err("Sign error: " + (e && e.message ? e.message : String(e)));
+      } finally {
+        popupBadge.style.display = 'none';
+      }
+    }
+
+    async function copy(el) {
+      try {
+        await navigator.clipboard.writeText(el.value);
+        info("Copied to clipboard.");
+      } catch (e) {
+        err("Copy failed: " + String(e));
+      }
     }
 
     connectBtn.onclick = connect;
     signBtn.onclick = sign;
+    copyAddr.onclick = () => copy(addrEl);
+    copySig.onclick = () => copy(sigEl);
   </script>
 </body>
 </html>

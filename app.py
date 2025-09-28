@@ -20,7 +20,7 @@ from utils import pretty_time, is_positive_number, fmt_money, CURRENCY_SYMBOLS, 
 
 # ---------- Page setup ----------
 st.set_page_config(page_title="Money Savings Pot (Simulated)", layout="wide")
-st.title("Money Savings Pot — Demo App")
+st.title("Money Savings Pot — Demo App (FinSight)")
 st.caption(
     "Transparent group saving with a hash-linked ledger. Optional wallet signing for crypto-style attestations. "
     "Not real money. Not financial advice."
@@ -44,7 +44,7 @@ use_ai = st.sidebar.checkbox(
     help="Requires GOOGLE_API_KEY in .env (falls back to local summary if missing).",
 )
 
-# ---------- Transaction form (with LOCKED message to avoid drift) ----------
+# ---------- Transaction form (with LOCKED message/amount) ----------
 st.subheader("Add Transaction")
 c1, c2, c3, c4 = st.columns([1.2, 1, 1, 2])
 with c1:
@@ -52,59 +52,59 @@ with c1:
 with c2:
     action = st.selectbox("Action", ["DEPOSIT", "WITHDRAW"] if allow_withdraw else ["DEPOSIT"])
 with c3:
-    amt_str = st.text_input("Amount", placeholder="25.00")
+    amount_val = st.number_input("Amount", min_value=0.01, value=25.00, step=1.00, format="%.2f")
 with c4:
     note = st.text_input("Note (optional)", placeholder="Weekly contribution")
 
-# Session state for locking the exact message to sign
+# session state for locking
 if "locked_msg" not in st.session_state:
     st.session_state.locked_msg = ""
 if "locked_ts" not in st.session_state:
     st.session_state.locked_ts = 0
+if "locked_amt" not in st.session_state:
+    st.session_state.locked_amt = None
 
 lock_col1, lock_col2 = st.columns([2, 1])
 with lock_col1:
     if st.button("1) Generate message to sign"):
         if not actor.strip():
             st.warning("Enter a name first.")
-        elif not is_positive_number(amt_str):
-            st.warning("Enter a valid positive amount first.")
         else:
             ts_now = int(time.time())
             st.session_state.locked_ts = ts_now
+            st.session_state.locked_amt = float(amount_val)
             st.session_state.locked_msg = canonical_message(
                 pot_name=pot_name,
                 actor=actor or "UNKNOWN",
                 action=action,
-                amount=float(amt_str),
+                amount=float(amount_val),
                 ts=ts_now,
-                prev_hash=chain[-1].hash,  # freeze prev hash at generation time
+                prev_hash=chain[-1].hash,
             )
 with lock_col2:
     if st.button("Reset message"):
         st.session_state.locked_msg = ""
         st.session_state.locked_ts = 0
+        st.session_state.locked_amt = None
 
 wallet_address = st.text_input("Wallet address (0x…)", placeholder="0xabc...")
-canonical = st.text_input(
-    "Canonical message (read-only)",
-    value=st.session_state.locked_msg,
-    disabled=True,
-)
+canonical = st.text_input("Canonical message (read-only)", value=st.session_state.locked_msg, disabled=True)
 signature = st.text_input("Signature (0x…)", placeholder="Paste from signer.html")
 
 st.markdown(
-    " Need a signature? Run a simple server and open **`signer.html`** at "
-    "`http://localhost:8000/signer.html`. Paste the *Canonical message* above, **Sign**, then paste "
-    "**Address** + **Signature** back here. Do **not** change any form fields between generating and signing."
+    "👉 Generate the message, sign it in **signer.html**, then paste Address + Signature here. "
+    "Do **not** change actor/action/amount after generating."
 )
+
 
 # ---------- Add to ledger (verifies signature if provided) ----------
 if st.button("2) Add to Ledger"):
     if not actor.strip():
         st.warning("Enter a name.")
         st.stop()
-    if not is_positive_number(amt_str):
+    # amount to use = locked amount if you generated a message, else the current field
+    amount_to_use = st.session_state.locked_amt if st.session_state.locked_amt is not None else float(amount_val)
+    if amount_to_use <= 0:
         st.warning("Amount must be a positive number.")
         st.stop()
     if action == "WITHDRAW" and not allow_withdraw:
@@ -116,7 +116,7 @@ if st.button("2) Add to Ledger"):
         st.warning("Click '1) Generate message to sign' first (even if you won't sign).")
         st.stop()
 
-    # Optional wallet signature verification
+    # Optional signature verification
     if wallet_address.strip() and signature.strip():
         try:
             msg = encode_defunct(text=msg_to_sign)
@@ -124,21 +124,24 @@ if st.button("2) Add to Ledger"):
             if recovered.lower() != wallet_address.strip().lower():
                 st.error(
                     "Signature does not match wallet address.\n\n"
-                    f"Recovered: {recovered}\nEntered:   {wallet_address}"
+                    f"Recovered from signature: {recovered}\n"
+                    f"Address you entered:      {wallet_address}\n\n"
+                    "Tip: Reset → Generate → Re-sign, then paste the NEW signature."
                 )
                 st.stop()
+            else:
+                st.info(f"Signature verified ✅ (address: {recovered})")
         except Exception as e:
             st.error(f"Signature verification failed: {e}")
             st.stop()
     else:
-        # store empty signature fields if none provided
-        wallet_address, signature = "", ""
+        wallet_address, signature = "", ""  # no-sign fallback
 
     new_block = make_block(
         chain[-1],
         actor=actor,
         action=action,
-        amount=float(amt_str),
+        amount=amount_to_use,
         note=note,
         wallet_address=wallet_address,
         signed_message=msg_to_sign,
@@ -146,13 +149,13 @@ if st.button("2) Add to Ledger"):
     )
     chain.append(new_block)
     save_chain(to_dicts(chain))
-    st.success(f"Added {action} of {fmt_money(float(amt_str), currency)} by {actor}")
+    st.success(f"Added {action} of {fmt_money(amount_to_use, currency)} by {actor}")
 
-    # clear locked message so next tx must regenerate
+    # clear locks
     st.session_state.locked_msg = ""
     st.session_state.locked_ts = 0
+    st.session_state.locked_amt = None
 
-st.divider()
 
 # ---------- Ledger view ----------
 st.subheader("Ledger")
