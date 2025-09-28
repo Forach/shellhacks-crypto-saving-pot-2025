@@ -76,8 +76,8 @@ streamlit run app.py
 ### Demo
 - GitHub Repo: [https://github.com/Forach/shellhacks-crypto-saving-pot-2025]
 - Live App (Streamlit Cloud): coming soon
-- Video Demo (YouTube): link here
-- Devpost Submission: link here
+- Video Demo (YouTube): [https://www.youtube.com/watch?v=I1HkmmWg1as]
+- Devpost Submission: [https://devpost.com/software/aiconomy?ref_content=my-projects-tab&ref_feature=my_projects]
 
 
 ### Disclaimer
