@@ -48,34 +48,38 @@ pip install -r requirements.txt
 
 # Run the app
 streamlit run app.py
+```
 
+### Optional Setup
+## Google AI Studio API (for AI Coach summaries)
 
-Optional Setup
-    Google AI Studio API (for AI Coach summaries)
-
-    1. Create a .env file in the project root:
+1. Create a .env file in the project root:
+    
+```bash
         GOOGLE_API_KEY=your_api_key_here
+```
 
-    2. In the app sidebar, enable AI Coach.
-        If no key is provided, the app falls back to local rule-based summaries.
+2. In the app sidebar, enable AI Coach.
+    If no key is provided, the app falls back to local rule-based summaries.
 
-    MetaMask Signing (for crypto-style attestations)
+## MetaMask Signing (for crypto-style attestations)
 
-    1. Run a simple HTTP server to serve the included signer.html:
-        ```bash
+1. Run a simple HTTP server to serve the included signer.html:
+```bash
         python -m http.server 8000
-    2. Open http://localhost:8000/signer.html in your browser.
-    3. Copy the locked canonical message from the app into the signer, sign it with MetaMask, and paste the Address + Signature back into the app.
-    4. When you add the transaction, the app will verify that the recovered signer matches the entered wallet address.
+```        
+2. Open http://localhost:8000/signer.html in your browser.
+3. Copy the locked canonical message from the app into the signer, sign it with MetaMask, and paste the Address + Signature back into the app.
+4. When you add the transaction, the app will verify that the recovered signer matches the entered wallet address.
 
 
-Demo
-    GitHub Repo: [https://github.com/Forach/shellhacks-crypto-saving-pot-2025]
-    Live App (Streamlit Cloud): coming soon
-    Video Demo (YouTube): link here
-    Devpost Submission: link here
+### Demo
+- GitHub Repo: [https://github.com/Forach/shellhacks-crypto-saving-pot-2025]
+- Live App (Streamlit Cloud): coming soon
+- Video Demo (YouTube): link here
+- Devpost Submission: link here
 
 
-Disclaimer
-    This project was built for ShellHacks 2025 as a demo.
-    It is not connected to real banks, crypto wallets, or money.
+### Disclaimer
+**This project was built for ShellHacks 2025 as a demo.**
+**It is not connected to real banks, crypto wallets, or money.** 
