@@ -1,0 +1,73 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>MetaMask Message Signer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    input, textarea, button { font-size: 16px; width: 100%; padding: 8px; margin: 6px 0; }
+    code { background: #f4f4f4; padding: 2px 4px; }
+  </style>
+</head>
+<body>
+  <h1>MetaMask Message Signer</h1>
+  <p>1) Click <b>Connect</b>. 2) Paste the <b>Canonical message</b> from the app. 3) Click <b>Sign</b>. 4) Copy the <b>Address</b> and <b>Signature</b> back into the Streamlit app.</p>
+
+  <button id="connect">Connect Wallet</button>
+  <div id="accountBox"></div>
+
+  <label>Message to sign</label>
+  <textarea id="msg" rows="5" placeholder="POT:SpringBreakFund|ACTOR:Alice|ACTION:DEPOSIT|AMOUNT:25.00|TS:...|PREV:..."></textarea>
+
+  <button id="sign">Sign Message</button>
+
+  <label>Address</label>
+  <input id="addr" readonly />
+  <label>Signature</label>
+  <textarea id="sig" rows="3" readonly></textarea>
+
+  <script>
+    const connectBtn = document.getElementById('connect');
+    const signBtn = document.getElementById('sign');
+    const msgEl = document.getElementById('msg');
+    const addrEl = document.getElementById('addr');
+    const sigEl = document.getElementById('sig');
+    const accountBox = document.getElementById('accountBox');
+    let account = null;
+
+    function toHexUtf8(str) {
+      const enc = new TextEncoder().encode(str);
+      return '0x' + Array.from(enc).map(b => b.toString(16).padStart(2,'0')).join('');
+    }
+
+    async function connect() {
+      if (!window.ethereum) {
+        alert("MetaMask not detected. Install the extension and refresh.");
+        return;
+      }
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      account = accounts[0];
+      accountBox.innerHTML = "Connected account: <code>" + account + "</code>";
+      addrEl.value = account;
+    }
+
+    async function sign() {
+      if (!account) return alert("Connect wallet first.");
+      const msg = msgEl.value.trim();
+      if (!msg) return alert("Paste the Canonical message first.");
+
+      // Use hex-encoded UTF-8 to avoid any encoding ambiguity
+      const hexMsg = toHexUtf8(msg);
+      const signature = await window.ethereum.request({
+        method: 'personal_sign',
+        params: [ hexMsg, account ],
+      });
+      sigEl.value = signature;
+    }
+
+    connectBtn.onclick = connect;
+    signBtn.onclick = sign;
+  </script>
+</body>
+</html>
